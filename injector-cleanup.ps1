@@ -13,7 +13,8 @@ if ($proc) {
     exit
 }
 
-$LocalDLL_Path = "$env:C:\Windows\System32\Neck_F8_Free.dll"
+# DLL download path (System32)
+$LocalDLL_Path = "C:\Windows\System32\Neck_F8_Free.dll"
 # =============================================== #
 
 Write-Host "[*] Downloading DLL from GitHub..."
@@ -77,10 +78,10 @@ Write-Host "✅ DLL Injected into PID $TargetPID from GitHub"
 
 Write-Host "[*] Cleaning Temp, Prefetch, Recycle Bin and Download History..."
 
-# Delete the DLL itself from Temp
+# Delete the DLL itself from System32
 try {
     Remove-Item -Path $LocalDLL_Path -Force -ErrorAction SilentlyContinue
-    Write-Host "[+] Injected DLL file deleted from Temp"
+    Write-Host "[+] Injected DLL file deleted from System32"
 } catch { Write-Host "[-] DLL delete failed: $_" }
 
 # Clear Temp Folder (all files and folders)
@@ -127,4 +128,4 @@ try {
     }
 } catch { Write-Host "[-] Browser history clear failed: $_" }
 
-Write-Host "✅ Cleaning Complete"
+Write-Host "✅ Cleaning Complete"
