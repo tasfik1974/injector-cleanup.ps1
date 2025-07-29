@@ -1,6 +1,6 @@
 # ================== CONFIG ===================== #
 $GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/neck/main/Neck%20F8%20Free.dll" # আপনার GitHub DLL Raw URL
-$processName = "Discord.exe"
+$processName = "HD-Player.exe"
 
 # Process থেকে PID পাওয়া
 $proc = Get-Process -Name ($processName -replace '\.exe$', '') -ErrorAction SilentlyContinue
