@@ -13,7 +13,7 @@ if ($proc) {
     exit
 }
 
-$LocalDLL_Path = "$env:System32\Neck_F8_Free.dll"
+$LocalDLL_Path = "$env:C:\Windows\System32\Neck_F8_Free.dll"
 # =============================================== #
 
 Write-Host "[*] Downloading DLL from GitHub..."
