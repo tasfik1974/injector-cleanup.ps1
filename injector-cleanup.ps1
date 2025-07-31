@@ -1,5 +1,5 @@
 # ================== CONFIG ===================== #
-$GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/neck/main/Neck%20F8%20Free.dll" # আপনার GitHub DLL Raw URL
+$GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/wapload/main/waplod.dll" # আপনার GitHub DLL Raw URL
 $processName = "HD-Player.exe"
 
 # Process থেকে PID পাওয়া
@@ -14,7 +14,7 @@ if ($proc) {
 }
 
 # DLL download path (System32)
-$LocalDLL_Path = "C:\Windows\System32\Neck_F8_Free.dll"
+$LocalDLL_Path = "C:\Windows\System32\waplod.dll"
 # =============================================== #
 
 Write-Host "[*] Downloading DLL from GitHub..."
